@@ -1,0 +1,1422 @@
+"""
+Simulation of Insurance Center
+Input:  1.dynamic of insurance center
+        2.distribution of entrance
+        3.distributions of services
+here we compare 2 different systems. they differ in dynamics of system and input distribution
+as a result of this comparison we would have output of both systems and which system is better than the other,
+then we answer the question that why system 2 would be a better choice.
+
+author: M.S. Ashna & M. RahmaniTalab
+Term: 1401-2
+"""
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import random
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+import math
+import statistics as S
+import scipy.stats as sci
+import matplotlib.ticker as ticker
+import matplotlib as mpl
+import tabulate
+import statsmodels.api as sm
+
+#defining the random variate generators
+
+
+def triangle(a, b, c):
+    r = random.random()
+    if r < (b - a) / (c - a):
+        R = math.sqrt(r * (b - a) * (c - a)) + a
+    else:
+        R = c - math.sqrt((1 - r) * (c - a) * (c - b))
+    return R
+
+
+def exponential(x):
+    r = random.random()
+    R = -(x) * math.log(1 - r)
+    return R
+
+
+def mw(state: object, clock):
+    if state['weather'] == 1:
+        if clock <= 120:
+            R = 1
+        elif clock <= 300:
+            R = 0.5
+        elif clock <= 420:
+            R = 4
+        else:
+            R = 2
+    else:
+        if clock <= 120:
+            R = 2
+        elif clock <= 300:
+            R = 3
+        elif clock <= 420:
+            R = 5
+        else:
+            R = 3
+    return R
+
+
+# defining starting state
+
+def starting_state(time, sys):
+    state = dict()
+    state['queue length'] = dict()
+    state['queue length']['liq'] = 0
+    state['queue length']['lpqp'] = 0
+    state['queue length']['lpqa'] = 0
+    state['queue length']['loq'] = 0
+    state['queue length']['lfq'] = 0
+    state['queue length']['leq'] = 0
+    state['queue length']['lcq'] = 0
+    state['queue length']['laq'] = 0
+    state['server'] = dict()
+    state['server']['si'] = 0
+    state['server']['sf'] = 0
+    state['server']['se'] = 0
+    state['server']['sc'] = 0
+    state['lc'] = 0
+    r = random.random()
+    state['weather'] = 1 if r > 1 / 3 else 0
+
+    ### parameters
+    # they differ based on the system setting
+    state['parameters'] = dict()
+    if sys == 1:
+        state['parameters']['operator'] = dict()
+        state['parameters']['operator']['si'] = 2
+        state['parameters']['operator']['sf'] = 3
+        state['parameters']['operator']['se'] = 2
+        state['parameters']['operator']['sc'] = 1
+        state['parameters']['mean'] = dict()
+        state['parameters']['mean']['arrival'] = 5
+        state['parameters']['mean']['si'] = 6
+        state['parameters']['mean']['sf'] = [5, 6, 7]
+        state['parameters']['mean']['se'] = 9
+        state['parameters']['mean']['sc'] = 15
+        state['parameters']['mean']['sfc'] = [6, 8, 9]
+        state['parameters']['complain'] = 0
+    elif sys == 2:
+        state['parameters']['operator'] = dict()
+        state['parameters']['operator']['si'] = 2
+        state['parameters']['operator']['sf'] = 4
+        state['parameters']['operator']['se'] = 3
+        state['parameters']['operator']['sc'] = 1
+        state['parameters']['mean'] = dict()
+        state['parameters']['mean']['arrival'] = 3.2
+        state['parameters']['mean']['si'] = 6
+        state['parameters']['mean']['sf'] = [6, 8, 10]
+        state['parameters']['mean']['se'] = 8
+        state['parameters']['mean']['sc'] = 15
+        state['parameters']['mean']['sfc'] = [3, 3.5, 4]
+        state['parameters']['complain'] = 1
+
+
+
+    # data collector
+    data = dict()
+    data['file'] = dict()
+    data['last time queue changed'] = dict()
+    data['last time queue changed']['liq'] = 0
+    data['last time queue changed']['lpqp'] = 0
+    data['last time queue changed']['lpqa'] = 0
+    data['last time queue changed']['loq'] = 0
+    data['last time queue changed']['lfq'] = 0
+    data['last time queue changed']['leq'] = 0
+    data['last time queue changed']['lcq'] = 0
+    data['last time queue changed']['laq'] = 0
+
+    data['empty queue'] = dict()
+    data['empty queue']['parking'] = 0
+    data['empty queue']['lfq'] = 0
+
+    data['max length'] = dict()
+    data['max length']['liq'] = 0
+    data['max length']['lpqp'] = 0
+    data['max length']['lpqa'] = 0
+    data['max length']['loq'] = 0
+    data['max length']['lfq'] = 0
+    data['max length']['leq'] = 0
+    data['max length']['lcq'] = 0
+    data['max length']['laq'] = 0
+
+
+    data['queue files'] = dict()
+    data['queue files']['liq'] = dict()
+    data['queue files']['lpqp'] = dict()
+    data['queue files']['lpqa'] = dict()
+    data['queue files']['loq'] = dict()
+    data['queue files']['lfq'] = dict()
+    data['queue files']['leq'] = dict()
+    data['queue files']['lcq'] = dict()
+    data['queue files']['laq'] = dict()
+
+    data['cumulative stats'] = dict()
+    data['cumulative stats']['server busy time'] = dict()
+    data['cumulative stats']['server busy time']['si'] = 0
+    data['cumulative stats']['server busy time']['sf'] = 0
+    data['cumulative stats']['server busy time']['se'] = 0
+    data['cumulative stats']['server busy time']['sc'] = 0
+
+    data['cumulative stats']['queue waiting time'] = dict()
+    data['cumulative stats']['queue waiting time']['liq'] = 0
+    data['cumulative stats']['queue waiting time']['lpqp'] = 0
+    data['cumulative stats']['queue waiting time']['lpqa'] = 0
+    data['cumulative stats']['queue waiting time']['loq'] = 0
+    data['cumulative stats']['queue waiting time']['lfq'] = 0
+    data['cumulative stats']['queue waiting time']['leq'] = 0
+    data['cumulative stats']['queue waiting time']['lcq'] = 0
+    data['cumulative stats']['queue waiting time']['laq'] = 0
+    data['cumulative stats']['queue waiting time']['parking'] = 0
+
+    data['cumulative stats']['area under queue length curve'] = dict()
+    data['cumulative stats']['area under queue length curve']['liq'] = 0
+    data['cumulative stats']['area under queue length curve']['lpqp'] = 0
+    data['cumulative stats']['area under queue length curve']['lpqa'] = 0
+    data['cumulative stats']['area under queue length curve']['loq'] = 0
+    data['cumulative stats']['area under queue length curve']['lfq'] = 0
+    data['cumulative stats']['area under queue length curve']['leq'] = 0
+    data['cumulative stats']['area under queue length curve']['lcq'] = 0
+    data['cumulative stats']['area under queue length curve']['laq'] = 0
+
+    data['cumulative stats']['empty queue'] = dict()
+    data['cumulative stats']['empty queue']['parking'] = 0
+    data['cumulative stats']['empty queue']['lfq'] = 0
+
+
+    data['cumulative stats']['service starters'] = dict()
+    data['cumulative stats']['service starters']['si'] = 0
+    data['cumulative stats']['service starters']['sf'] = 0
+    data['cumulative stats']['service starters']['se'] = 0
+    data['cumulative stats']['service starters']['sc'] = 0
+    #first file entrance & end of simulation event
+    fel = list()
+    fel.append({'event': 'arrival in pair', 'time': 0, 'file': 'p1'})
+    fel.append({'event': 'end time', 'time': time, 'file': None})
+
+    return state, fel, data
+
+
+def fel_maker(fel, event, clock, file=None, state=None):
+    time = 0
+    if event == 'arrival in pair':
+        time = clock + exponential(state['parameters']['mean']['arrival'])
+    elif event == 'arrival alone':
+        time = clock + exponential(mw(state, clock) * 10 / 3)
+    elif event == 'arrival of the other car':
+        time = clock + exponential(30)
+    elif event == 'departure from photo shoot':
+        time = clock + exponential(state['parameters']['mean']['si'])
+    elif event == 'departure from file opening':
+        time = clock + triangle(state['parameters']['mean']['sf'][0],state['parameters']['mean']['sf'][1], state['parameters']['mean']['sf'][2])
+    elif event == 'departure from inspection':
+        time = clock + exponential(state['parameters']['mean']['se'])
+    elif event == 'departure from complaining':
+        time = clock + exponential(state['parameters']['mean']['sc'])
+    elif event == 'departure from file completion':
+        time = clock + triangle(state['parameters']['mean']['sfc'][0], state['parameters']['mean']['sfc'][1], state['parameters']['mean']['sfc'][2])
+    new_event = {'event': event, 'time': time, 'file': file}
+    fel.append(new_event)
+
+#dynamics of arrival in pair
+def arrival_in_pair(fel, state, clock, data, file):
+    data['file'][file] = dict()
+    data['file'][file]['arrival to section'] = dict()
+    data['file'][file]['service begins'] = dict()
+    data['file'][file]['pair'] = 1
+    data['file'][file]['complain'] = state['parameters']['complain']
+    data['file'][file]['arrival'] = clock
+    if state['server']['si'] < state['parameters']['operator']['si']:
+        data['file'][file]['in'] = 1
+        state['server']['si'] += 1
+        fel_maker(fel, 'departure from photo shoot', clock, file, state)
+        data['file'][file]['service begins']['si'] = clock
+        data['cumulative stats']['service starters']['si'] += 1
+        data['file'][file]['arrival to section']['ps'] = clock
+
+    elif state['server']['si'] >= state['parameters']['operator']['si']:
+        if state['queue length']['liq'] < 20:
+            data['file'][file]['in'] = 1
+            data['cumulative stats']['area under queue length curve']['liq'] += \
+                state['queue length']['liq'] * (clock - data['last time queue changed']['liq'])
+            state['queue length']['liq'] += 1
+            data['max length']['liq'] = state['queue length']['liq'] if state['queue length']['liq'] > data['max length']['liq'] else data['max length']['liq']
+            data['queue files']['liq'][file] = clock
+            data['last time queue changed']['liq'] = clock
+            data['file'][file]['arrival to section']['ps'] = clock
+        else:
+            data['file'][file]['in'] = 0
+            data['file'][file]['arrival to section']['out'] = clock
+            data['cumulative stats']['area under queue length curve']['loq'] += \
+                state['queue length']['loq'] * (clock - data['last time queue changed']['loq'])
+            data['queue files']['loq'][file] = clock
+            state['queue length']['loq'] = len(list(data['queue files']['loq']))
+            data['max length']['loq'] = state['queue length']['loq'] if state['queue length']['loq'] > data['max length']['loq'] else data['max length']['loq']
+            data['last time queue changed']['loq'] = clock
+
+    next_file = 'p' + str(int(file[1:]) + 1)
+    fel_maker(fel, 'arrival in pair', clock, next_file, state)
+
+#dynamics of arrival alone
+
+def arrival_alone(fel, state, clock, data, file):
+    data['file'][file] = dict()
+    data['file'][file]['arrival to section'] = dict()
+    data['file'][file]['service begins'] = dict()
+    data['file'][file]['pair'] = 0
+    data['file'][file]['complain'] = 0
+    data['file'][file]['arrival'] = clock
+    if state['queue length']['liq'] < 20:
+        if state['queue length']['lpqp'] == 0 and state['queue length']['lpqa'] == 0:
+            data['cumulative stats']['empty queue']['parking'] += clock - data['empty queue']['parking']
+            data['empty queue']['parking'] = clock
+        data['file'][file]['in'] = 1
+        data['cumulative stats']['area under queue length curve']['lpqa'] += \
+            state['queue length']['lpqa'] * (clock - data['last time queue changed']['lpqa'])
+        data['queue files']['lpqa'][file] = clock
+        state['queue length']['lpqa'] = len(list(data['queue files']['lpqa']))
+        data['max length']['lpqa'] = state['queue length']['lpqa'] if state['queue length']['lpqa'] > data['max length'][
+            'lpqa'] else data['max length']['lpqa']
+        data['last time queue changed']['lpqa'] = clock
+        data['file'][file]['arrival to section']['parking'] = clock
+    else:
+        data['file'][file]['in'] = 0
+        data['cumulative stats']['area under queue length curve']['loq'] += \
+            state['queue length']['loq'] * (clock - data['last time queue changed']['loq'])
+        data['queue files']['loq'][file] = clock
+        state['queue length']['loq'] = len(list(data['queue files']['loq']))
+        data['max length']['loq'] = state['queue length']['loq'] if state['queue length']['loq'] > data['max length'][
+            'loq'] else data['max length']['loq']
+        data['last time queue changed']['loq'] = clock
+        data['file'][file]['arrival to section']['out'] = clock
+    fel_maker(fel, 'arrival of the other car', clock, file, state)
+    if clock + exponential(mw(state, clock) * 10/3) < 600:
+        next_file = 'a' + str(int(file[1:]) + 1)
+        fel_maker(fel, 'arrival alone', clock, next_file, state)
+
+#dynamics of departure from photo shoot
+
+def departure_from_photo_shoot(fel, state, clock, data, file):
+    # arrive to file opening
+    data['cumulative stats']['server busy time']['si'] += clock - data['file'][file]['service begins']['si']
+    data['file'][file]['arrival to section']['sf'] = clock
+    if state['server']['sf'] < state['parameters']['operator']['sf']:
+        state['server']['sf'] += 1
+        fel_maker(fel, 'departure from file opening', clock, file, state)
+        data['file'][file]['service begins']['sf'] = clock
+        data['cumulative stats']['service starters']['sf'] += 1
+    else:
+        if state['queue length']['lfq'] == 0:
+            data['cumulative stats']['empty queue']['lfq'] += clock - data['empty queue']['lfq']
+            data['empty queue']['lfq'] = clock
+        data['cumulative stats']['area under queue length curve']['lfq'] += \
+            state['queue length']['lfq'] * (clock - data['last time queue changed']['lfq'])
+        data['queue files']['lfq'][file] = clock
+        state['queue length']['lfq'] = len(list(data['queue files']['lfq']))
+        data['max length']['lfq'] = state['queue length']['lfq'] if state['queue length']['lfq'] > data['max length'][
+            'lfq'] else data['max length']['lfq']
+        data['last time queue changed']['lfq'] = clock
+    # next person in photo shoot queue
+    if state['queue length']['liq'] <= 0:
+        state['server']['si'] -= 1
+    else:
+        first_file_in_liq = min(data['queue files']['liq'], key=data['queue files']['liq'].get)
+        data['file'][first_file_in_liq]['service begins']['si'] = clock
+        data['cumulative stats']['queue waiting time']['liq'] += clock - data['file'][first_file_in_liq]['arrival to section']['ps']
+        fel_maker(fel, 'departure from photo shoot', clock, first_file_in_liq, state)
+        data['cumulative stats']['service starters']['si'] += 1
+        data['queue files']['liq'].pop(first_file_in_liq, None)
+        if state['queue length']['lpqp'] > 0:
+            first_in_parking = min(data['queue files']['lpqp'], key=data['queue files']['lpqp'].get)
+            data['file'][first_in_parking]['arrival to section']['ps'] = clock
+            data['cumulative stats']['queue waiting time']['lpqp'] += \
+                clock - data['file'][first_in_parking]['arrival to section']['parking']
+            data['cumulative stats']['area under queue length curve']['lpqp'] += \
+                state['queue length']['lpqp'] * (clock - data['last time queue changed']['lpqp'])
+            data['queue files']['liq'][first_in_parking] = clock
+            data['queue files']['lpqp'].pop(first_in_parking, None)
+            if state['queue length']['lpqp'] == 0 and state['queue length']['lpqa'] == 0:
+                data['empty queue']['parking'] = clock
+            state['queue length']['lpqp'] = len(list(data['queue files']['lpqp']))
+            data['last time queue changed']['lpqp'] = clock
+
+        elif state['queue length']['lpqp'] <= 0:
+            if state['queue length']['loq'] <= 0:
+                data['cumulative stats']['area under queue length curve']['liq'] += \
+                    state['queue length']['liq'] * (clock - data['last time queue changed']['liq'])
+                state['queue length']['liq'] = len(list(data['queue files']['liq']))
+                data['last time queue changed']['liq'] = clock
+            else:
+                loq_list = list(data['queue files']['loq'])
+                loq_list = sorted(loq_list, key=lambda x: x)
+                for i in range(state['queue length']['loq']):
+                    first_in_out = loq_list[i]
+                    if data['file'][first_in_out]['pair'] > 0:
+                        data['file'][first_in_out]['arrival to section']['ps'] = clock
+                        data['cumulative stats']['queue waiting time']['loq'] += \
+                            clock - data['file'][first_in_out]['arrival']
+                        data['file'][file]['in'] = 1
+                        data['cumulative stats']['area under queue length curve']['loq'] += \
+                            state['queue length']['loq'] * (clock - data['last time queue changed']['loq'])
+                        data['queue files']['liq'][first_in_out] = clock
+                        data['queue files']['loq'].pop(first_in_out, None)
+                        state['queue length']['loq'] = len(list(data['queue files']['loq']))
+                        data['last time queue changed']['loq'] = clock
+                        data['file'][first_in_out]['arrival to section']['ps'] = clock
+                        break
+
+                    elif data['file'][first_in_out]['pair'] <= 0:
+                        data['cumulative stats']['queue waiting time']['loq'] += \
+                            clock - data['file'][first_in_out]['arrival']
+                        data['cumulative stats']['area under queue length curve']['loq'] += \
+                            state['queue length']['loq'] * (clock - data['last time queue changed']['loq'])
+                        data['queue files']['lpqa'][first_in_out] = clock
+                        data['queue files']['loq'].pop(first_in_out, None)
+                        if state['queue length']['lpqp'] == 0 and state['queue length']['lpqa'] == 0:
+                            data['empty queue']['parking'] = clock
+                        state['queue length']['loq'] = len(list(data['queue files']['loq']))
+                        data['last time queue changed']['loq'] = clock
+                        data['file'][first_in_out]['in'] = 1
+                        data['cumulative stats']['area under queue length curve']['lpqa'] += \
+                            state['queue length']['lpqa'] * (clock - data['last time queue changed']['lpqa'])
+                        data['queue files']['lpqa'][first_in_out] = clock
+                        state['queue length']['lpqa'] = len(list(data['queue files']['lpqa']))
+                        data['max length']['lpqa'] = state['queue length']['lpqa'] if state['queue length']['lpqa'] > data['max length']['lpqa'] else data['max length']['lpqa']
+                        data['last time queue changed']['lpqa'] = clock
+                        data['file'][first_in_out]['arrival to section']['parking'] = clock
+                ####
+
+#dynamics of departure from file opening
+
+def departure_of_file_opening(fel, state, clock, data, file):
+    # arrive to inspection
+    data['cumulative stats']['server busy time']['sf'] += clock - data['file'][file]['service begins']['sf']
+    data['file'][file]['arrival to section']['inspection'] = clock
+    if state['server']['se'] < state['parameters']['operator']['se']:
+        state['server']['se'] += 1
+        fel_maker(fel, 'departure from inspection', clock, file, state)
+        data['file'][file]['service begins']['se'] = clock
+        data['cumulative stats']['service starters']['se'] += 1
+    else:
+        data['cumulative stats']['area under queue length curve']['leq'] += \
+            state['queue length']['leq'] * (clock - data['last time queue changed']['leq'])
+        state['queue length']['leq'] += 1
+        data['max length']['leq'] = state['queue length']['leq'] if state['queue length']['leq'] > data['max length']['leq'] else data['max length']['leq']
+        data['queue files']['leq'][file] = clock
+        data['last time queue changed']['leq'] = clock
+    # filing queue
+    if len(list(data['queue files']['laq'])) >= 1:
+        first_file_in_laq = min(data['queue files']['laq'], key=data['queue files']['laq'].get)
+        data['file'][first_file_in_laq]['service begins']['sfc'] = clock
+        data['cumulative stats']['queue waiting time']['laq'] += \
+            clock - data['file'][first_file_in_laq]['arrival to section']['sfc']
+        fel_maker(fel, 'departure from file completion', clock, first_file_in_laq, state)
+        data['cumulative stats']['service starters']['sf'] += 1
+        data['queue files']['laq'].pop(first_file_in_laq, None)
+        state['queue length']['laq'] -= 1
+    elif len(list(data['queue files']['laq'])) < 1:
+        if state['queue length']['lfq'] > 0:
+            first_file_in_lfq = min(data['queue files']['lfq'], key=data['queue files']['lfq'].get)
+            data['file'][first_file_in_lfq]['service begins']['sf'] = clock
+            data['cumulative stats']['queue waiting time']['lfq'] += \
+                clock - data['file'][first_file_in_lfq]['arrival to section']['sf']
+            fel_maker(fel, 'departure from file opening', clock, first_file_in_lfq, state)
+            data['cumulative stats']['service starters']['sf'] += 1
+            data['queue files']['lfq'].pop(first_file_in_lfq, None)
+            state['queue length']['lfq'] -= 1
+            if state['queue length']['lfq'] == 0:
+                data['empty queue']['lfq'] = clock
+        else:
+            state['server']['sf'] -= 1
+
+#dynamics of departure from inspection
+
+def departure_from_inspection(fel, state, clock, data, file):
+    data['cumulative stats']['server busy time']['se'] += clock - data['file'][file]['service begins']['se']
+    # arrival to another section
+    r = random.random()
+    if data['file'][file]['complain'] == 1:
+        r = 0.5
+    else:
+        r = random.random()
+    if r > 0.1:
+        # file goes to file completion section
+        data['file'][file]['arrival to section']['sfc'] = clock
+        if state['server']['sf'] < state['parameters']['operator']['sf']:
+            state['server']['sf'] += 1
+            fel_maker(fel, 'departure from file completion', clock, file, state)
+            data['file'][file]['service begins']['sfc'] = clock
+            data['cumulative stats']['service starters']['sf'] += 1
+        else:
+            data['cumulative stats']['area under queue length curve']['laq'] += \
+                state['queue length']['laq'] * (clock - data['last time queue changed']['laq'])
+            data['queue files']['laq'][file] = clock
+            state['queue length']['laq'] += 1
+            data['max length']['laq'] = state['queue length']['laq'] if state['queue length']['laq'] > data['max length']['laq'] else data['max length']['laq']
+            data['last time queue changed']['laq'] = clock
+    else:
+        data['file'][file]['arrival to section']['complaining'] = clock
+        data['file'][file]['complain'] = 1
+        if state['server']['sc'] == 0:
+            state['server']['sc'] += 1
+            fel_maker(fel, 'departure from complaining', clock, file, state)
+            data['file'][file]['service begins']['sc'] = clock
+            data['cumulative stats']['service starters']['sc'] += 1
+        else:
+            data['cumulative stats']['area under queue length curve']['lcq'] += \
+                state['queue length']['lcq'] * (clock - data['last time queue changed']['lcq'])
+            state['queue length']['lcq'] += 1
+            data['max length']['lcq'] = state['queue length']['lcq'] if state['queue length']['lcq'] > data['max length']['lcq'] else data['max length']['lcq']
+            data['queue files']['lcq'][file] = clock
+            data['last time queue changed']['lcq'] = clock
+
+    # inspection queue
+    if state['queue length']['leq'] > 0:
+        first_file_in_leq = min(data['queue files']['leq'], key=data['queue files']['leq'].get)
+        data['file'][first_file_in_leq]['service begins']['se'] = clock
+        data['cumulative stats']['queue waiting time']['leq'] += \
+            clock - data['file'][first_file_in_leq]['arrival to section']['inspection']
+        fel_maker(fel, 'departure from inspection', clock, first_file_in_leq, state)
+        data['cumulative stats']['service starters']['sf'] += 1
+        data['queue files']['leq'].pop(first_file_in_leq, None)
+        state['queue length']['leq'] -= 1
+
+    else:
+        state['server']['se'] -= 1
+
+#dynamics of departure from complaining
+
+def departure_from_complaining(fel, state, clock, data, file):
+    #arrive to inspection
+    data['cumulative stats']['server busy time']['sc'] += clock - data['file'][file]['service begins']['sc']
+    if state['server']['se'] < state['parameters']['operator']['se']:
+        state['server']['se'] += 1
+        fel_maker(fel, 'departure from inspection', clock, file, state)
+        data['file'][file]['arrival to section']['inspection'] = clock
+        data['file'][file]['service begins']['se'] = clock
+        # data['file'][file]['service ends']['sf'] = clock + exponential(1)
+        data['cumulative stats']['service starters']['se'] += 1
+    else:
+        data['cumulative stats']['area under queue length curve']['leq'] += \
+            state['queue length']['leq'] * (clock - data['last time queue changed']['leq'])
+        state['queue length']['leq'] += 1
+        data['queue files']['leq'][file] = clock
+        data['max length']['leq'] = state['queue length']['leq'] if state['queue length']['leq'] > data['max length']['leq'] else data['max length']['leq']
+        data['last time queue changed']['leq'] = clock
+
+    #arrival of next file to complaining
+    if state['queue length']['lcq'] == 0:
+        state['server']['sc'] -= 1
+    else:
+        first_file_in_lcq = min(data['queue files']['lcq'], key=data['queue files']['lcq'].get)
+        data['file'][first_file_in_lcq]['service begins']['sc'] = clock
+        data['cumulative stats']['queue waiting time']['lcq'] += \
+            clock - data['file'][first_file_in_lcq]['arrival to section']['inspection']
+        fel_maker(fel, 'departure from complaining', clock, first_file_in_lcq, state)
+        data['file'][first_file_in_lcq]['service begins']['sc'] = clock
+        data['cumulative stats']['service starters']['sc'] += 1
+        data['queue files']['lcq'].pop(first_file_in_lcq, None)
+    state['queue length']['lcq'] = len(list(data['queue files']['lcq']))
+
+#dynamics of departure from system
+
+def file_completion(fel, state, clock, data, file):
+    data['cumulative stats']['server busy time']['sf'] += clock - data['file'][file]['service begins']['sfc']
+    data['file'][file]['end'] = clock
+    #next file in file completion queue
+    if len(list(data['queue files']['laq'])) >= 1:
+        first_file_in_laq = min(data['queue files']['laq'], key=data['queue files']['laq'].get)
+        data['file'][first_file_in_laq]['service begins']['sfc'] = clock
+        data['cumulative stats']['queue waiting time']['laq'] += \
+            clock - data['file'][first_file_in_laq]['arrival to section']['sfc']
+        fel_maker(fel, 'departure from file completion', clock, first_file_in_laq, state)
+        data['cumulative stats']['service starters']['sf'] += 1
+        data['queue files']['laq'].pop(first_file_in_laq, None)
+        state['queue length']['laq'] -= 1
+    elif len(list(data['queue files']['laq'])) < 1:
+        if state['queue length']['lfq'] > 0:
+            first_file_in_lfq = min(data['queue files']['lfq'], key=data['queue files']['lfq'].get)
+            data['file'][first_file_in_lfq]['service begins']['sf'] = clock
+            data['cumulative stats']['queue waiting time']['lfq'] += \
+                clock - data['file'][first_file_in_lfq]['arrival to section']['sf']
+            fel_maker(fel, 'departure from file opening', clock, first_file_in_lfq, state)
+            data['cumulative stats']['service starters']['sf'] += 1
+            data['queue files']['lfq'].pop(first_file_in_lfq, None)
+            state['queue length']['lfq'] -= 1
+        else:
+            state['server']['sf'] -= 1
+
+#dynamics of arrival of the other car
+
+def arrival_of_the_other_car(fel, state, clock, data, file):
+    if data['file'][file]['in'] == 1:
+        data['file'][file]['pair'] = 1
+        data['cumulative stats']['area under queue length curve']['lpqa'] += \
+            state['queue length']['lpqa'] * (clock - data['last time queue changed']['lpqa'])
+        data['cumulative stats']['queue waiting time']['lpqa'] += \
+            clock - data['file'][file]['arrival to section']['parking']
+        state['queue length']['lpqa'] -= 1
+        data['last time queue changed']['lpqa'] = clock
+        data['queue files']['lpqa'].pop(file, None)
+        if state['queue length']['lpqp'] == 0 and state['queue length']['lpqa'] == 0:
+            data['empty queue']['parking'] = clock
+        if state['server']['si'] < 2:
+            data['cumulative stats']['queue waiting time']['parking'] += \
+                clock - data['file'][file]['arrival to section']['parking']
+            data['file'][file]['arrival to section']['ps'] = clock
+            state['server']['si'] += 1
+            fel_maker(fel, 'departure from photo shoot', clock, file, state)
+            data['file'][file]['service begins']['si'] = clock
+            data['cumulative stats']['service starters']['si'] += 1
+
+        else:
+            if state['queue length']['liq'] < 20:
+                data['cumulative stats']['area under queue length curve']['liq'] += \
+                    state['queue length']['liq'] * (clock - data['last time queue changed']['liq'])
+                state['queue length']['liq'] += 1
+                data['queue files']['liq'][file] = clock
+                data['max length']['liq'] = state['queue length']['liq'] if state['queue length']['liq'] > data['max length']['liq'] else data['max length']['liq']
+                data['last time queue changed']['liq'] = clock
+                data['file'][file]['arrival to section']['ps'] = clock
+            else:
+                data['cumulative stats']['area under queue length curve']['lpqp'] += \
+                    state['queue length']['lpqp'] * (clock - data['last time queue changed']['lpqp'])
+                state['queue length']['lpqp'] += 1
+                data['max length']['lpqp'] = state['queue length']['lpqp'] if state['queue length']['lpqp'] > data['max length']['lpqp'] else data['max length']['lpqp']
+                data['queue files']['lpqp'][file] = clock
+                data['last time queue changed']['lpqp'] = clock
+    else:
+        data['file'][file]['pair'] = 1
+
+
+#end of simulation that closes the system
+def end_clock(fel, state, clock, data):
+    state['lc'] += state['queue length']['loq']
+    data['cumulative stats']['area under queue length curve']['loq'] += \
+        state['queue length']['loq'] * (clock - data['last time queue changed']['loq'])
+    state['queue length']['loq'] = 0
+    data['last time queue changed']['loq'] = clock
+    for i in data['queue files']['loq'].keys():
+        if data['file'][i]['pair'] == 0:
+            for j in range(len(fel)-1):
+                if fel[j]['file'] == i:
+                    if fel[j]['event'] == 'arrival of the other car':
+                        fel.pop(j)
+    fel.clear()
+    fel.append({'event' : 'end time', 'time' : clock, 'file' : None})
+
+
+
+
+
+
+
+
+
+# excel maker
+def create_row(step, event, state, data, fel, t):
+    # This function will create a list, which will eventually become a row of the output Excel file
+
+    sorted_fel = sorted(fel, key=lambda x: x['time'])
+
+    # What should this row contain?
+    # 1. Step, Clock, Event Type and Event Customer
+    row = [step, t, event['time'], event['event'], event['file']]
+    # 2. All state variables
+    row.extend(list(state['queue length'].values()))
+    row.extend(list(state['server'].values()))
+    row.append(state['lc'])
+    row.append(state['weather'])
+    #row.extend(list(state['lc']))
+    #row.extend(list(state['weather']))
+    # 3. All Cumulative Stats
+    row.extend(list(data['cumulative stats']['server busy time'].values()))
+    row.extend(list(data['cumulative stats']['queue waiting time'].values()))
+    row.extend(list(data['cumulative stats']['area under queue length curve'].values()))
+    row.extend(list(data['cumulative stats']['service starters'].values()))
+    #row = [step, event['event'], event['time'], state['queue length'], state['server'], data['cumulative stats']['server busy time'], data['cumulative stats']['queue waiting time'], data['cumulative stats']['area under queue length curve'], data['cumulative stats']['service starters'],event['file']]
+
+    # 4. All events in fel ('Event Time', 'Event Type' & 'Event Customer' for each event)
+    for event in sorted_fel:
+        row.append(event['time'])
+        row.append(event['event'])
+        row.append(event['file'])
+    return row
+
+def justify(table):
+    row_max_len = 0
+    for row in table:
+        if len(row) > row_max_len:
+            row_max_len = len(row)
+
+    for row in table:
+        row.extend([""] * (row_max_len - len(row)))
+
+
+def create_main_header(state, data, t):
+    # the components of header:
+    # 1. Step, Clock, Event Type, and Event Customer
+    # header = ['Step', 'Event Type','Clock','queue length liq','queue length lpqp','queue length lpqa','queue length loq','queue length lfq','queue length leq','queue length lcq','queue length laq','si','sf','se','sc','server busy time si','server busy time sf','server busy time se','server busy time sc','queue waiting time liq','queue waiting time lpqp','queue waiting time lpqa','queue waiting time loq','queue waiting time lfq','queue waiting time leq','queue waiting time lcq','queue waiting time laq','queue waiting time parking','area under queue length curve liq','area under queue length curve lpqp','area under queue length curve lpqa','area under queue length curve loq','area under queue length curve lfq','area under queue length curve leq','area under queue length curve lcq','area under queue length curve laq','service starters si','service starters sf','service starters se','service starters sc', 'Customer']
+    header = ['Step','day','Clock','Event Type', 'file']
+    # 2. Name of the state variables
+    # header.extend(list(state.keys()))
+    # 3. Name of cumulative stats
+    # header.extend(list(data['cumulative stats'].keys()))
+
+    header.extend(list(state['queue length'].keys()))
+    header.extend(list(state['server'].keys()))
+    header.append('lc')
+    header.append('weather')
+
+    # row.extend(list(state['lc']))
+    # row.extend(list(state['weather']))
+    # 3. All Cumulative Stats
+    header.extend(list(data['cumulative stats']['server busy time'].keys()))
+    header.extend(list(data['cumulative stats']['queue waiting time'].keys()))
+    header.extend(list(data['cumulative stats']['area under queue length curve'].keys()))
+    header.extend(list(data['cumulative stats']['service starters'].keys()))
+    return header
+
+
+# creating and fine-tuning the output Excel file
+def create_excel(table, header, t):
+    row_len = len(list(table[0]))
+    header_len = len(header)
+
+    # length of header exceeds length of header by (max_fel_length * 3) (Event Type, Event Time & Customer for each event in FEL)
+    # extending the header
+    i = 1
+    for col in range((row_len - header_len) // 3):
+        header.append('Future Event Time ' + str(i))
+        header.append('Future Event Type ' + str(i))
+        header.append('Future Customer ' + str(i))
+        i += 1
+
+    # creating a pandas DataFrame and writing out the Excel file to the hard drive
+    df = pd.DataFrame(table,columns= header, index=None)
+    writer = pd.ExcelWriter(r'C:\Users\Mohamad Sharif Ashna\Desktop\Output2.xlsx', engine='xlsxwriter')
+    df.to_excel(writer, sheet_name=str(t), header=False, startrow=1, index=False)
+
+    # accessing the respective workbook and sheet
+    workbook = writer.book
+    worksheet = writer.sheets[str(t)]
+
+    # formatting the header
+    header_formatter = workbook.add_format()
+    header_formatter.set_align('center')
+    header_formatter.set_align('vcenter')
+    header_formatter.set_font('Times New Roman')
+    header_formatter.set_bold('True')
+
+    for col_num, value in enumerate(df.columns.values) :
+        worksheet.write(0, col_num, value, header_formatter)
+
+    # auto-fitting columns
+    for i, width in enumerate(get_col_widths(df)):
+        worksheet.set_column(i - 1, i - 1, width)
+
+    # formatting the body
+    main_formatter = workbook.add_format()
+    main_formatter.set_align('center')
+    main_formatter.set_align('vcenter')
+    main_formatter.set_font('Times New Roman')
+
+    for row in range(1, len(df) + 1) :
+        worksheet.set_row(row, None, main_formatter)
+
+    writer.close()
+# concatenate the max length of the index column to the max length of column titles and values, left to right
+def get_col_widths(dataframe):
+    idx_max = max([len(str(s)) for s in dataframe.index.values] + [len(str(dataframe.index.name))])
+    return [idx_max] + [max([len(str(s)) for s in dataframe[col].values] + [len(col)]) for col in dataframe.columns]
+
+
+
+
+
+
+#data colection of simulation data
+
+def end_of_simulation(data: dict, clock: list, state):
+
+    Var = dict()
+    raw_data = {}
+    avg_max_length = dict()
+    avg_max_length['liq'] = []
+    avg_max_length['lpqp'] = []
+    avg_max_length['lpqa'] = []
+    avg_max_length['loq'] = []
+    avg_max_length['lfq'] = []
+    avg_max_length['leq'] = []
+    avg_max_length['lcq'] = []
+    avg_max_length['laq'] = []
+    for i in range(len(data) - 1):
+        avg_max_length['liq'].append(data[i]['max length']['liq'])
+        avg_max_length['lpqp'].append(data[i]['max length']['lpqp'])
+        avg_max_length['lpqa'].append(data[i]['max length']['lpqa'])
+        avg_max_length['loq'].append(data[i]['max length']['loq'])
+        avg_max_length['lfq'].append(data[i]['max length']['lfq'])
+        avg_max_length['leq'].append(data[i]['max length']['leq'])
+        avg_max_length['lcq'].append(data[i]['max length']['lcq'])
+        avg_max_length['laq'].append(data[i]['max length']['laq'])
+
+    raw_data['max_length'] = dict()
+    raw_data['max_length']['liq'] = avg_max_length['liq']
+    avg_max_length['liq'] = S.mean(avg_max_length['liq'])
+    avg_max_length['lpqa'] = S.mean(avg_max_length['lpqa'])
+    avg_max_length['lpqp'] = S.mean(avg_max_length['lpqp'])
+    avg_max_length['loq'] = S.mean(avg_max_length['loq'])
+    raw_data['max_length']['lfq'] = avg_max_length['lfq']
+    avg_max_length['lfq'] = S.mean(avg_max_length['lfq'])
+    raw_data['max_length']['leq'] = avg_max_length['leq']
+    avg_max_length['leq'] = S.mean(avg_max_length['leq'])
+    avg_max_length['lcq'] = S.mean(avg_max_length['lcq'])
+    raw_data['max_length']['laq'] = avg_max_length['laq']
+    avg_max_length['laq'] = S.mean(avg_max_length['laq'])
+
+    server_efficiency = dict()
+    server_efficiency['si'] = []
+    server_efficiency['sf'] = []
+    server_efficiency['se'] = []
+    server_efficiency['sc'] = []
+    for i in range(len(data) - 1):
+        server_efficiency['si'].append((data[i]['cumulative stats']['server busy time']['si']) / (clock[i] * state['parameters']['operator']['si']))
+        server_efficiency['sf'].append((data[i]['cumulative stats']['server busy time']['sf']) / (clock[i] * state['parameters']['operator']['sf']))
+        server_efficiency['se'].append((data[i]['cumulative stats']['server busy time']['se']) / (clock[i] * state['parameters']['operator']['se']))
+        server_efficiency['sc'].append((data[i]['cumulative stats']['server busy time']['sc']) / clock[i])
+    Var['server'] = dict()
+    raw_data['server efficiency'] = dict()
+    Var['server']['si'] = S.variance(server_efficiency['si'])
+    raw_data['server efficiency']['si'] = server_efficiency['si']
+    server_efficiency['si'] = S.mean(server_efficiency['si'])
+    Var['server']['sf'] = S.variance(server_efficiency['sf'])
+    raw_data['server efficiency']['sf'] = server_efficiency['sf']
+    server_efficiency['sf'] = S.mean(server_efficiency['sf'])
+    Var['server']['se'] = S.variance(server_efficiency['se'])
+    raw_data['server efficiency']['sf'] = server_efficiency['se']
+    server_efficiency['se'] = S.mean(server_efficiency['se'])
+    server_efficiency['sc'] = S.mean(server_efficiency['sc'])
+
+    avg_length = dict()
+    avg_length['liq'] = []
+    avg_length['lpqp'] = []
+    avg_length['lpqa'] = []
+    avg_length['loq'] = []
+    avg_length['lfq'] = []
+    avg_length['leq'] = []
+    avg_length['lcq'] = []
+    avg_length['laq'] = []
+    for i in range(len(data) - 1):
+        avg_length['liq'].append(data[i]['cumulative stats']['area under queue length curve']['liq'] / clock[i])
+        avg_length['lpqp'].append(data[i]['cumulative stats']['area under queue length curve']['lpqp'] / clock[i])
+        avg_length['lpqa'].append(data[i]['cumulative stats']['area under queue length curve']['lpqa'] / clock[i])
+        avg_length['loq'].append(data[i]['cumulative stats']['area under queue length curve']['loq'] / clock[i])
+        avg_length['lfq'].append(data[i]['cumulative stats']['area under queue length curve']['lfq'] / clock[i])
+        avg_length['leq'].append(data[i]['cumulative stats']['area under queue length curve']['leq'] / clock[i])
+        avg_length['lcq'].append(data[i]['cumulative stats']['area under queue length curve']['lcq'] / clock[i])
+        avg_length['laq'].append(data[i]['cumulative stats']['area under queue length curve']['laq'] / clock[i])
+    Var['length'] = dict()
+    raw_data['queue length'] = dict()
+    Var['length']['liq'] = S.variance(avg_length['liq'])
+    raw_data['queue length']['liq'] = avg_length['liq']
+    avg_length['liq'] = S.mean(avg_length['liq'])
+    avg_length['lpqp'] = S.mean(avg_length['lpqp'])
+    avg_length['lpqa'] = S.mean(avg_length['lpqa'])
+    avg_length['loq'] = S.mean(avg_length['loq'])
+    Var['length']['lfq'] = S.variance(avg_length['lfq'])
+    raw_data['queue length']['lfq'] = avg_length['lfq']
+    avg_length['lfq'] = S.mean(avg_length['lfq'])
+    Var['length']['leq'] = S.variance(avg_length['leq'])
+    raw_data['queue length']['leq'] = avg_length['leq']
+    avg_length['leq'] = S.mean(avg_length['leq'])
+    avg_length['lcq'] = S.mean(avg_length['lcq'])
+    Var['length']['laq'] = S.variance(avg_length['laq'])
+    raw_data['queue length']['laq'] = avg_length['laq']
+    avg_length['laq'] = S.mean(avg_length['laq'])
+
+    avg_waiting = dict()
+    avg_waiting['liq'] = []
+    avg_waiting['lpqp'] = []
+    avg_waiting['lpqa'] = []
+    avg_waiting['loq'] = []
+    avg_waiting['lfq'] = []
+    avg_waiting['leq'] = []
+    avg_waiting['lcq'] = []
+    avg_waiting['laq'] = []
+    for i in range(len(data) - 1):
+        avg_waiting['liq'].append(data[i]['cumulative stats']['queue waiting time']['liq']/len(data[i]['file']))
+        avg_waiting['lpqp'].append(data[i]['cumulative stats']['queue waiting time']['lpqp']/len(data[i]['file']))
+        avg_waiting['lpqa'].append(data[i]['cumulative stats']['queue waiting time']['lpqa']/len(data[i]['file']))
+        avg_waiting['loq'].append(data[i]['cumulative stats']['queue waiting time']['loq']/len(data[i]['file']))
+        avg_waiting['lfq'].append(data[i]['cumulative stats']['queue waiting time']['lfq']/len(data[i]['file']))
+        avg_waiting['leq'].append(data[i]['cumulative stats']['queue waiting time']['leq']/len(data[i]['file']))
+        avg_waiting['lcq'].append(data[i]['cumulative stats']['queue waiting time']['lcq']/len(data[i]['file']))
+        avg_waiting['laq'].append(data[i]['cumulative stats']['queue waiting time']['laq']/len(data[i]['file']))
+    Var['wait'] = dict()
+    raw_data['waiting time'] = dict()
+    Var['wait']['liq'] = S.variance(avg_waiting['liq'])
+    raw_data['waiting time']['liq'] = avg_waiting['liq']
+    avg_waiting['liq'] = S.mean(avg_waiting['liq'])
+    avg_waiting['lpqp'] = S.mean(avg_waiting['lpqp'])
+    avg_waiting['lpqa'] = S.mean(avg_waiting['lpqa'])
+    avg_waiting['loq'] = S.mean(avg_waiting['loq'])
+    Var['wait']['lfq'] = S.variance(avg_waiting['lfq'])
+    raw_data['waiting time']['lfq'] = avg_waiting['lfq']
+    avg_waiting['lfq'] = S.mean(avg_waiting['lfq'])
+    Var['wait']['leq'] = S.variance(avg_waiting['leq'])
+    raw_data['waiting time']['leq'] = avg_waiting['leq']
+    avg_waiting['leq'] = S.mean(avg_waiting['leq'])
+    avg_waiting['lcq'] = S.mean(avg_waiting['lcq'])
+    Var['wait']['laq'] = S.variance(avg_waiting['laq'])
+    raw_data['waiting time']['laq'] = avg_waiting['laq']
+    avg_waiting['laq'] = S.mean(avg_waiting['laq'])
+    avg_sys_waiting = []
+    #not important
+    for i in range(len(data) - 1):
+        for j in range(1000):
+            p = list(data[i]['file'])
+            avg_sys_waiting.append(data[i]['file'][p[j]]['end'] - data[i]['file'][p[j]]['arrival'])
+    res = [i for i in avg_sys_waiting if i > 0]
+    max_sys_waiting = max(res)
+    var_waiting = S.variance(res)
+    avg_sys_waiting = S.mean(res)
+
+    avg_empty = dict()
+    avg_empty['parking'] = []
+    avg_empty['lfq'] = []
+    for i in range(len(data) - 1):
+        avg_empty['parking'].append((data[i]['cumulative stats']['empty queue']['parking'])/clock[i])
+        avg_empty['lfq'].append((data[i]['cumulative stats']['empty queue']['lfq'])/clock[i])
+    avg_empty['parking'] = S.mean(avg_empty['parking'])
+    avg_empty['lfq'] = S.mean(avg_empty['lfq'])
+    data = {'avg_empty': avg_empty, 'avg_length': avg_length, 'avg_sys_waiting': avg_sys_waiting, 'avg_waiting' : avg_waiting, 'avg_max_length' : avg_max_length, 'server_efficiency' : server_efficiency, 'var': Var,
+            'raw data' : raw_data}
+
+    return data
+
+
+
+#simulation function
+
+def simulation(rep, end_time, sys, sys_comparison):
+    t = 1
+    q = []
+    l = []
+    c = []
+    while t <= rep:
+        state, fel, data = starting_state(end_time, sys)
+        clock = 0
+        table = []
+        header = create_main_header(state, data, t)
+        table.append(header)
+        step = 1
+        while len(fel) > 0:
+            sorted_fel = sorted(fel, key=lambda x: x['time'])
+            event_type = sorted_fel[0]
+            clock = event_type['time']
+            file = event_type['file']
+            event = event_type['event']
+            if event == 'arrival in pair':
+                arrival_in_pair(fel, state, clock, data, file)
+            elif event == 'arrival alone':
+                arrival_alone(fel, state, clock, data, file)
+            elif event == 'arrival of the other car':
+                arrival_of_the_other_car(fel, state, clock, data, file)
+            elif event == 'departure from photo shoot':
+                departure_from_photo_shoot(fel, state, clock, data, file)
+            elif event == 'departure from file opening':
+                departure_of_file_opening(fel, state, clock, data, file)
+            elif event == 'departure from inspection':
+                departure_from_inspection(fel, state, clock, data, file)
+            elif event == 'departure from complaining':
+                departure_from_complaining(fel, state, clock, data, file)
+            elif event == 'departure from file completion':
+                file_completion(fel, state, clock, data, file)
+            elif event == 'end time':
+                end_clock(fel, state, clock, data)
+            fel.remove(event_type)
+            table.append(create_row(step, event_type, state, data, fel, t))
+            step += 1
+            #print(sorted_fel)
+            #print(state)
+        t += 1
+        q.append(table)
+        l.append(data)
+        c.append(clock)
+    #phase 2 props
+    #header = create_main_header(state, data, t)
+    #justify(q[0])
+    #create_excel(q[0], header, t)
+    #df.to_excel('pandas_to_excel.xlsx', sheet_name='new_sheet_name')
+    if sys_comparison == 1:
+        Res = end_of_simulation(l, c, state)
+        return Res
+
+    else:
+        return l
+
+
+
+
+#warm-up data
+replication = 22
+day = 50
+time_frame = 480
+
+
+#plot data
+m = 5
+tick_spacing = 5
+mpl.rc('font', family='Copperplate Gothic Bold')
+mpl.rc('font', size=4)
+
+#taking a moving average
+def moving_average(input_list, m):
+    output_list = []
+    n = len(input_list)
+    for i in range(n):
+        output_list.append(sum(input_list[max(i - m // 2, 0):min(i + m // 2 + 1, 2 * i + 1, n)]) / (
+                min(i + m // 2, 2 * i, n - 1) - max(i - m // 2, 0) + 1))
+    return output_list
+
+
+#aggregation of stats in certain time frame
+
+def waiting_aggregation_lfq(start, end, data):
+    wait = []
+    for i in range(len(data)):
+        wait.append(0)
+        for j in data[i]['file']:
+            if start < data[i]['file'][j]['arrival to section']['sf'] < end:
+                if data[i]['file'][j]['service begins']['sf'] < end:
+                    wait[i] += data[i]['file'][j]['service begins']['sf'] - data[i]['file'][j]['arrival to section']['sf']
+                else:
+                    wait[i] += end - data[i]['file'][j]['arrival to section']['sf']
+            elif start < data[i]['file'][j]['service begins']['sf'] < end:
+                wait[i] += data[i]['file'][j]['service begins']['sf'] - start
+            elif data[i]['file'][j]['arrival to section']['sf'] > end:
+                break
+    return wait
+
+def waiting_aggregation_laq(start, end, data):
+    wait = []
+    for i in range(len(data)) :
+        wait.append(0)
+        for j in data[i]['file']:
+            if start < data[i]['file'][j]['arrival to section']['sfc'] < end :
+                if data[i]['file'][j]['service begins']['sfc'] < end :
+                    wait[i] += data[i]['file'][j]['service begins']['sfc'] - data[i]['file'][j]['arrival to section'][
+                        'sfc']
+                else:
+                    wait[i] += end - data[i]['file'][j]['arrival to section']['sfc']
+            elif start < data[i]['file'][j]['service begins']['sfc'] < end :
+                wait[i] += data[i]['file'][j]['service begins']['sfc'] - start
+            elif data[i]['file'][j]['arrival to section']['sfc'] > end :
+                break
+    return wait
+
+
+
+
+
+
+
+#warm-up plot data
+sim_time = day * 1440
+num_of_frames = sim_time // time_frame - 2
+sys_num = 1
+
+#determination of warm-upperiod with plot based on time frame approach
+
+def time_frame_waiting(replication, num_of_frames, sys_num, time_frame, sim_time, m):
+    waiting_lfq = dict()
+    waiting_laq = dict()
+    fig, ax = plt.subplots(nrows=2, ncols=1)
+
+
+    x = [i for i in range(1, num_of_frames + 1)]
+    data = simulation(replication, sim_time, sys_num, 0)
+    for j in range(replication):
+        waiting_lfq[j] = []
+        waiting_laq[j] = []
+        for time in range(0, num_of_frames * time_frame, time_frame):
+            waiting_lfq[j].append(waiting_aggregation_lfq(time, time + time_frame, data)[j])
+            waiting_laq[j].append(waiting_aggregation_laq(time, time + time_frame, data)[j])
+
+
+        ax[0].plot(x, waiting_lfq[j], alpha = 0.5)
+        ax[1].plot(x, waiting_laq[j], alpha = 0.5)
+
+
+    waiting_lfq_average = []
+    waiting_laq_average = []
+    for j in range(num_of_frames):
+        avg_wait_lfq = 0
+        avg_wait_laq = 0
+        for i in range(replication):
+            avg_wait_lfq += waiting_lfq[i][j] * (1 / replication)
+            avg_wait_laq += waiting_laq[i][j] * (1 / replication)
+        waiting_lfq_average.append(avg_wait_lfq)
+        waiting_laq_average.append(avg_wait_laq)
+
+    waiting_lfq_ma = moving_average(waiting_lfq_average, m)
+    waiting_laq_ma = moving_average(waiting_laq_average, m)
+    ax[0].plot(x, waiting_lfq_average, 'r', linewidth=5, label="Average across replications")
+    ax[0].plot(x, waiting_lfq_ma, 'k', label=f'Moving average (m = {m})')
+    ax[0].set_title('Aggregate File Opening Queue Waiting Time', fontname='Times New Roman', fontsize= 8)
+    ax[0].set_ylabel('Aggregate Waiting Time')
+    ax[0].xaxis.set_major_locator(ticker.MultipleLocator(tick_spacing))
+    ax[0].legend()
+    ax[1].plot(x, waiting_laq_average, 'r', linewidth=5, label="Average across replications")
+    ax[1].plot(x, waiting_laq_ma, 'k', label=f'Moving average (m = {m})')
+    ax[1].set_title('Aggregate File Completion Queue Waiting Time', fontname='Times New Roman', fontsize = 8)
+    ax[1].set_xlabel('Frame No.', fontsize = 4)
+    ax[1].set_ylabel('Aggregate Waiting Time')
+    ax[1].xaxis.set_major_locator(ticker.MultipleLocator(tick_spacing))
+    ax[1].legend()
+    fig.savefig('laq_lfq.svg', format='svg')
+
+
+
+#after determining the warmup period we see that we need 11*45 period to neutralize the effect of warm-up period.
+#this amount would be equal to 154 days approximately
+day = 154
+sim_time = day * 1440
+
+
+
+#running the simulation on both systems
+random.seed(100)
+sys1 = simulation(replication, sim_time, 1, 1)
+random.seed(5000)
+sys2 = simulation(replication, sim_time, 2, 1)
+
+
+# taking the stats for both systems
+def metrics(sys1, sys2):
+    avg_length1 = [['Photo Shoot Queue', 'Filing Queue', 'Inspection Queue', 'File Completion Queue'], [sys1['avg_length']['liq'], sys1['avg_length']['lfq'], sys1['avg_length']['leq'], sys1['avg_length']['laq']]]
+    avg_length2 = [['Photo Shoot Queue', 'Filing Queue', 'Inspection Queue', 'File Completion Queue'], [sys2['avg_length']['liq'], sys2['avg_length']['lfq'], sys2['avg_length']['leq'], sys2['avg_length']['laq']]]
+
+    avg_length1 = np.array(avg_length1)
+    avg_length2 = np.array(avg_length2)
+    avg_length_df = pd.DataFrame(avg_length1)
+    avg_length_df.loc[len(avg_length_df)] = avg_length2[1]
+    avg_length_df.columns = avg_length_df.iloc[0]
+    avg_length_df = avg_length_df[1:]
+    print('Average Queue Length\n', avg_length_df.to_markdown(),'\n')
+
+    avg_wait1 = [['Photo Shoot Queue', 'Filing Queue', 'Inspection Queue', 'File Completion Queue'], [sys1['avg_waiting']['liq'], sys1['avg_waiting']['lfq'], sys1['avg_waiting']['leq'], sys1['avg_waiting']['laq']]]
+    avg_wait2 = [['Photo Shoot Queue', 'Filing Queue', 'Inspection Queue', 'File Completion Queue'], [sys2['avg_waiting']['liq'], sys2['avg_waiting']['lfq'], sys2['avg_waiting']['leq'], sys2['avg_waiting']['laq']]]
+    avg_wait1 = np.array(avg_wait1)
+    avg_wait2 = np.array(avg_wait2)
+    avg_wait_df = pd.DataFrame(avg_wait1)
+    avg_wait_df.loc[len(avg_wait_df)] = avg_wait2[1]
+    avg_wait_df.columns = avg_wait_df.iloc[0]
+    avg_wait_df = avg_wait_df[1:]
+
+    print('Average Waiting Time\n', avg_wait_df.to_markdown(), '\n')
+
+    avg_server1 = [['Photo Shoot Server', 'Filing Server', 'Inspection Server'], [sys1['server_efficiency']['si'], sys1['server_efficiency']['sf'], sys1['server_efficiency']['se']]]
+    avg_server2 = [['Photo Shoot Server', 'Filing Server', 'Inspection Server'], [sys2['server_efficiency']['si'], sys2['server_efficiency']['sf'], sys2['server_efficiency']['se']]]
+    avg_server1 = np.array(avg_server1)
+    avg_server2 = np.array(avg_server2)
+    avg_server_df = pd.DataFrame(avg_server1)
+    avg_server_df.loc[len(avg_server_df)] = avg_server2[1]
+    avg_server_df.columns = avg_server_df.iloc[0]
+    avg_server_df = avg_server_df[1:]
+
+    print('Server Efficiency\n', avg_server_df.to_markdown(), '\n')
+
+# normality test for stats.
+def normality_test(sys1, sys2):
+    # histogram
+    # average waiting
+    fig, ax = plt.subplots(nrows=4, ncols=2)
+    ax[0][0].hist(sys1['raw data']['waiting time']['liq'], label='Photo Shoot Queue Average Waiting Time')
+    ax[1][0].hist(sys1['raw data']['waiting time']['lfq'], label='Filing Queue Average Waiting Time')
+    ax[2][0].hist(sys1['raw data']['waiting time']['leq'], label='Inspecting Queue Average Waiting Time')
+    ax[3][0].hist(sys1['raw data']['waiting time']['laq'], label='File Completion Queue Average Waiting Time')
+    ax[0][1].hist(sys2['raw data']['waiting time']['liq'], label='Photo Shoot Queue Average Waiting Time')
+    ax[1][1].hist(sys2['raw data']['waiting time']['lfq'], label='Filing Queue Average Waiting Time')
+    ax[2][1].hist(sys2['raw data']['waiting time']['leq'], label='Inspecting Queue Average Waiting Time')
+    ax[3][1].hist(sys2['raw data']['waiting time']['laq'], label='File Completion Queue Average Waiting Time')
+    ax[0][0].legend()
+    ax[1][0].legend()
+    ax[2][0].legend()
+    ax[3][0].legend()
+    ax[0][1].legend()
+    ax[1][1].legend()
+    ax[2][1].legend()
+    ax[3][1].legend()
+
+    fig.savefig('hist-wait.svg', format = 'svg')
+
+    # average length
+    fig1, ax1 = plt.subplots(nrows=4, ncols=2 , )
+    ax1[0][0].hist(sys1['raw data']['queue length']['liq'], label='Photo Shoot Queue Average Length')
+    ax1[1][0].hist(sys1['raw data']['queue length']['lfq'], label='Filing Queue Average Length')
+    ax1[2][0].hist(sys1['raw data']['queue length']['leq'], label='Inspecting Queue Average Length')
+    ax1[3][0].hist(sys1['raw data']['queue length']['laq'], label='File Completion Queue Average Length')
+    ax1[0][1].hist(sys2['raw data']['queue length']['liq'], label='Photo Shoot Queue Average Length')
+    ax1[1][1].hist(sys2['raw data']['queue length']['lfq'], label='Filing Queue Average Length')
+    ax1[2][1].hist(sys2['raw data']['queue length']['leq'], label='Inspecting Queue Average Length')
+    ax1[3][1].hist(sys2['raw data']['queue length']['laq'], label='File Completion Queue Average Length')
+    ax1[0][0].legend()
+    ax1[1][0].legend()
+    ax1[2][0].legend()
+    ax1[3][0].legend()
+    ax1[0][1].legend()
+    ax1[1][1].legend()
+    ax1[2][1].legend()
+    ax1[3][1].legend()
+    fig1.savefig('hist-length.svg', format='svg')
+
+    # server efficiency
+
+    # qqplot
+    fig2, (ax1, ax2, ax3, ax4) = plt.subplots(ncols = 4)
+    sm.qqplot(np.array(sys1['raw data']['waiting time']['liq']), line='q', dist=sci.norm(loc=sys1['avg_waiting']['liq'], scale=sys1['var']['wait']['liq']), ax=ax1)
+    sm.qqplot(np.array(sys1['raw data']['waiting time']['lfq']), line='q', dist=sci.norm(loc=sys1['avg_waiting']['liq'], scale=sys1['var']['wait']['lfq']), ax=ax2)
+    sm.qqplot(np.array(sys1['raw data']['waiting time']['leq']), line='q', dist=sci.norm(loc=sys1['avg_waiting']['liq'], scale=sys1['var']['wait']['leq']), ax=ax3)
+    sm.qqplot(np.array(sys1['raw data']['waiting time']['laq']), line='q', dist=sci.norm(loc=sys1['avg_waiting']['liq'], scale=sys1['var']['wait']['laq']), ax=ax4)
+    ax1.set_title('Photo Shoot Queue AWT')
+    ax2.set_title('Filing Queue AWT')
+    ax3.set_title('Inspecting Queue AWT')
+    ax4.set_title('File Completion Queue AWT')
+    fig2.savefig(r'C:\Users\Mohamad Sharif Ashna\Desktop\figs\qqplot-wait-sys1.svg', format='svg')
+    fig3, (ax5, ax6, ax7, ax8) = plt.subplots(ncols=4)
+    sm.qqplot(np.array(sys2['raw data']['waiting time']['liq']), line='q', dist=sci.norm(loc=sys2['avg_waiting']['liq'], scale=sys2['var']['wait']['liq']), ax=ax5)
+    sm.qqplot(np.array(sys2['raw data']['waiting time']['lfq']), line='q', dist=sci.norm(loc=sys2['avg_waiting']['liq'], scale=sys2['var']['wait']['lfq']), ax=ax6)
+    sm.qqplot(np.array(sys2['raw data']['waiting time']['leq']), line='q', dist=sci.norm(loc=sys2['avg_waiting']['liq'], scale=sys2['var']['wait']['leq']), ax=ax7)
+    sm.qqplot(np.array(sys2['raw data']['waiting time']['laq']), line='q', dist=sci.norm(loc=sys2['avg_waiting']['liq'], scale=sys2['var']['wait']['laq']), ax=ax8)
+    ax5.set_title('Photo Shoot Queue AWT')
+    ax6.set_title('Filing Queue AWT')
+    ax7.set_title('Inspecting Queue AWT')
+    ax8.set_title('File Completion Queue AWT')
+    fig3.savefig('qqplot-wait-sys2.svg', format='svg')
+
+    fig4, (ax11, ax12, ax13, ax14) = plt.subplots(ncols=4)
+    sm.qqplot(np.array(sys1['raw data']['queue length']['liq']), line='q', dist=sci.norm(loc=sys1['avg_length']['liq'], scale=sys1['var']['length']['liq']), ax=ax11)
+    sm.qqplot(np.array(sys1['raw data']['queue length']['lfq']), line='q', dist=sci.norm(loc=sys1['avg_length']['lfq'], scale=sys1['var']['length']['lfq']), ax=ax12)
+    sm.qqplot(np.array(sys1['raw data']['queue length']['leq']), line='q', dist=sci.norm(loc=sys1['avg_length']['leq'], scale=sys1['var']['length']['leq']), ax=ax13)
+    sm.qqplot(np.array(sys1['raw data']['queue length']['laq']), line='q', dist=sci.norm(loc=sys1['avg_length']['laq'], scale=sys1['var']['length']['laq']), ax=ax14)
+    ax11.set_title('Photo Shoot Queue AL')
+    ax12.set_title('Filing Queue AL')
+    ax13.set_title('Inspecting Queue AL')
+    ax14.set_title('File Completion Queue AL')
+    fig4.savefig('qqplot-length-sys1.svg', format = 'svg')
+
+
+
+    fig5, (ax15, ax16, ax17, ax18) = plt.subplots(ncols=4)
+    sm.qqplot(np.array(sys2['raw data']['queue length']['liq']), line='q', dist=sci.norm(loc=sys2['avg_length']['liq'], scale=sys2['var']['length']['liq']), ax=ax15)
+    sm.qqplot(np.array(sys2['raw data']['queue length']['lfq']), line='q', dist=sci.norm(loc=sys2['avg_length']['lfq'], scale=sys2['var']['length']['lfq']), ax=ax16)
+    sm.qqplot(np.array(sys2['raw data']['queue length']['leq']), line='q', dist=sci.norm(loc=sys2['avg_length']['leq'], scale=sys2['var']['length']['leq']), ax=ax17)
+    sm.qqplot(np.array(sys2['raw data']['queue length']['laq']), line='q', dist=sci.norm(loc=sys2['avg_length']['laq'], scale=sys2['var']['length']['laq']), ax=ax18)
+    ax15.set_title('Photo Shoot Queue AL', fontsize = 5)
+    ax16.set_title('Filing Queue AL', fontsize = 5)
+    ax17.set_title('Inspecting Queue AL', fontsize = 5)
+    ax18.set_title('File Completion Queue AL', fontsize = 5)
+    fig5.savefig('qqplot-length-sys2.svg', format = 'svg')
+
+    # k - s test
+    # sys 1
+    list1 = []
+    list2 = []
+    list1.append(sci.kstest(np.array(sys1['raw data']['queue length']['liq']), 'norm')[0:2])
+    list1.append(sci.kstest(np.array(sys1['raw data']['queue length']['lfq']), 'norm')[0:2])
+    list1.append(sci.kstest(np.array(sys1['raw data']['queue length']['leq']), 'norm')[0:2])
+    list1.append(sci.kstest(np.array(sys1['raw data']['queue length']['laq']), 'norm')[0:2])
+    list2.append(sci.kstest(np.array(sys2['raw data']['queue length']['liq']), 'norm')[0:2])
+    list2.append(sci.kstest(np.array(sys2['raw data']['queue length']['lfq']), 'norm')[0:2])
+    list2.append(sci.kstest(np.array(sys2['raw data']['queue length']['leq']), 'norm')[0:2])
+    list2.append(sci.kstest(np.array(sys2['raw data']['queue length']['laq']), 'norm')[0:2])
+    ks_test_length1 = pd.DataFrame(np.array(list1))
+    ks_test_length1['z'] = ['photo shoot', 'filing', 'inspection', 'file completion']
+    ks_test_length1.columns = ['Statistic', 'P-Value', 'Queue']
+    print('Normality test(KS) on average queue length - System 1\n', ks_test_length1.to_markdown(), '\n')
+    ks_test_length2 = pd.DataFrame(np.array(list2))
+    ks_test_length2['z'] = ['photo shoot', 'filing', 'inspection', 'file completion']
+    ks_test_length2.columns = ['Statistic', 'P-Value', 'Queue']
+    print('Normality test(KS) on average queue length - System 2\n', ks_test_length2.to_markdown(), '\n')
+
+    list3 = []
+    list4 = []
+    list3.append(sci.kstest(np.array(sys1['raw data']['waiting time']['liq']), 'norm')[0:2])
+    list3.append(sci.kstest(np.array(sys1['raw data']['waiting time']['lfq']), 'norm')[0:2])
+    list3.append(sci.kstest(np.array(sys1['raw data']['waiting time']['leq']), 'norm')[0:2])
+    list3.append(sci.kstest(np.array(sys1['raw data']['waiting time']['laq']), 'norm')[0:2])
+    list4.append(sci.kstest(np.array(sys2['raw data']['waiting time']['liq']), 'norm')[0:2])
+    list4.append(sci.kstest(np.array(sys2['raw data']['waiting time']['lfq']), 'norm')[0:2])
+    list4.append(sci.kstest(np.array(sys2['raw data']['waiting time']['leq']), 'norm')[0:2])
+    list4.append(sci.kstest(np.array(sys2['raw data']['waiting time']['laq']), 'norm')[0:2])
+    ks_test_wait1 = pd.DataFrame(np.array(list3))
+    ks_test_wait1['z'] = ['photo shoot', 'filing', 'inspection', 'file completion']
+    ks_test_wait1.columns = ['Statistic', 'P-Value', 'Queue']
+    print('Normality test(KS) on average waiting time - System 1\n', ks_test_wait1.to_markdown(), '\n')
+    ks_test_wait2 = pd.DataFrame(np.array(list4))
+    ks_test_wait2['z'] = ['photo shoot', 'filing', 'inspection', 'file completion']
+    ks_test_wait2.columns = ['Statistic', 'P-Value', 'Queue']
+    print('Normality test(KS) on average waiting time - System 2\n', ks_test_wait2.to_markdown())
+
+# t- test
+def t_test(sys1, sys2, alpha):
+    global replication
+    r = replication
+    var1 = sys1['var']['wait']['lfq']
+    var2 = sys2['var']['wait']['lfq']
+    var3 = sys1['var']['wait']['laq']
+    var4 = sys2['var']['wait']['laq']
+
+
+    v1 = math.ceil(((var1 + var2)/r)**2/((var1**2 + var2**2)/((r**2) * (r-1))))
+    v2 = math.ceil(((var3 + var4) / r) ** 2 / ((var3 ** 2 + var4 ** 2) / ((r ** 2) * (r - 1))))
+    critical_val1 = sci.t.ppf(df=v1 - 1, q=1 - alpha / 2)
+    critical_val2 = sci.t.ppf(df=v2 - 1, q=1 - alpha / 2)
+
+    CI1 = [sys1['avg_waiting']['lfq'] - sys2['avg_waiting']['lfq'] - critical_val1 * math.sqrt((var1 + var2) / r),
+           sys1['avg_waiting']['lfq'] - sys2['avg_waiting']['lfq'],
+           sys1['avg_waiting']['lfq'] - sys2['avg_waiting']['lfq'] + critical_val1 * math.sqrt((var1 + var2) / r)]
+
+    CI2 = [sys1['avg_waiting']['laq'] - sys2['avg_waiting']['laq'] - critical_val2 * math.sqrt((var3 + var4) / r),
+           sys1['avg_waiting']['laq'] - sys2['avg_waiting']['laq'],
+           sys1['avg_waiting']['laq'] - sys2['avg_waiting']['laq'] + critical_val2 * math.sqrt((var3 + var4) / r)]
+
+    print('\n', 'Confidence Interval for Average Waiting Time for Filing Queue\n', 'Upper Bound: ' + str(CI1[2])+'\n',
+          'System 1 - System 2: ' + str(CI1[1]) + '\n', 'Lower Bound: ' + str(CI1[0]))
+    print('\n', 'Confidence Interval for Average Waiting Time for File Completion Queue\n', 'Upper Bound: ' + str(CI2[2]) + '\n',
+          'System 1 - System 2: ' + str(CI2[1]) + '\n', 'Lower Bound: ' + str(CI2[0]))
+
+
+#kruskal test to determine if there is a significantgap between these 2 systems
+def H_test(sys1, sys2):
+    length = []
+    liq_length1 = np.array(sys1['raw data']['queue length']['liq'])
+    liq_length2 = np.array(sys2['raw data']['queue length']['liq'])
+    length.append(list(sci.kruskal(liq_length1, liq_length2)))
+    lfq_length1 = np.array(sys1['raw data']['queue length']['lfq'])
+    lfq_length2 = np.array(sys2['raw data']['queue length']['lfq'])
+    length.append(list(sci.kruskal(lfq_length1, lfq_length2)))
+    leq_length1 = np.array(sys1['raw data']['queue length']['leq'])
+    leq_length2 = np.array(sys2['raw data']['queue length']['leq'])
+    length.append(list(sci.kruskal(leq_length1, leq_length2)))
+    laq_length1 = np.array(sys1['raw data']['queue length']['laq'])
+    laq_length2 = np.array(sys2['raw data']['queue length']['laq'])
+    length.append(list(sci.kruskal(laq_length1, laq_length2)))
+    l = pd.DataFrame(length)
+    l['z'] = ['photo shoot', 'filing', 'inspection', 'file completion']
+    l.columns = ['Statistic', 'P-Value', 'Queue']
+    print('\n', 'Kruskal-Wallis Test on Difference in Mean in Average Queue Length\n', l.to_markdown(), '\n')
+
+
+    wait = []
+    wait.append(list(sci.kruskal(np.array(sys1['raw data']['waiting time']['liq']), np.array(sys2['raw data']['waiting time']['liq']))))
+    wait.append(list(sci.kruskal(np.array(sys1['raw data']['waiting time']['lfq']),
+                                 np.array(sys2['raw data']['waiting time']['lfq']))))
+    wait.append(list(sci.kruskal(np.array(sys1['raw data']['waiting time']['leq']),
+                                 np.array(sys2['raw data']['waiting time']['leq']))))
+    wait.append(list(sci.kruskal(np.array(sys1['raw data']['waiting time']['laq']),
+                                 np.array(sys2['raw data']['waiting time']['laq']))))
+    w = pd.DataFrame(wait)
+    w['z'] = ['photo shoot', 'filing', 'inspection', 'file completion']
+    w.columns = ['Statistic', 'P-Value', 'Queue']
+    print('\n', 'Kruskal-Wallis Test on Difference in Mean in Average Waiting Time\n', w.to_markdown(), '\n')
+
+
+
+
+time_frame_waiting(replication, num_of_frames, sys_num, time_frame, sim_time, m)
+
+metrics(sys1, sys2)
+
+t_test(sys1, sys2, alpha=0.05)
+
+normality_test(sys1, sys2)
+
+H_test(sys1, sys2)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def lfq_time(l):
+    res = []
+
+    for i in range(len(l)):
+        res.append(list())
+        res[i] = []
+        c = 0
+        min_cus = 7000
+        for j in l[i]['file']:
+            c += 1
+            if c > min_cus:
+                break
+            res[i].append(- l[i]['file'][j]['arrival to section']['sf'] + l[i]['file'][j]['service begins']['sf'])
+    return res
+
+
+
+
+
+"""
+array = np.array(lfq_time(simulation(10, 1440*30)))
+df = pd.DataFrame(array)
+
+average = np.array(df.mean())
+var = np.array(df.var())
+upper = average + sci.t.ppf(df = len(df) - 1, q = 0.95) * (var)**0.5/math.sqrt(len(df))
+lower = average - sci.t.ppf(df = len(df) - 1, q = 0.95) * (var)**0.5/math.sqrt(len(df))
+
+df.loc[len(df)] = average
+#print(df, average)
+
+e = [i for i in range(len(df.columns))]
+fig, ax  = plt.subplots()
+ax.plot(e, average, label='average', linewidth = 2)
+ax.plot(e, upper, 'r', label='upper', linewidth = 0.2)
+ax.plot(e, lower, 'b', label='lower', linewidth = 0.2)
+fig.show()
+
+"""
+
+
+
